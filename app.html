@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRON Light Bikes</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at top, #050b18, #000);
+  font-family: 'Press Start 2P', monospace;
+  color: #7df9ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.game-wrapper {
+  background: #020617;
+  border-radius: 14px;
+  padding: 18px;
+  width: 90vw;
+  max-width: 420px;
+  box-shadow: 0 0 25px #00f6ff55;
+  text-align: center;
+}
+
+.nav a {
+  color: #ff4ecd;
+  text-decoration: none;
+  font-size: 0.6rem;
+}
+
+.nav a:hover { text-decoration: underline; }
+
+.header h1 { font-size: 1rem; color: #00f6ff; margin-bottom: 10px; }
+
+.score { font-size: 0.7rem; margin-bottom: 8px; }
+
+canvas {
+  display: block;
+  margin: 0 auto;
+  background: #020617;
+  border-radius: 8px;
+  box-shadow: inset 0 0 12px #00f6ff33;
+  width: 90vw;
+  max-width: 360px;
+  height: 90vw;
+  max-height: 360px;
+}
+
+.controls { font-size: 0.55rem; margin-top: 10px; color: #9ca3af; }
+
+button {
+  background-color: #00f6ff;
+  color: #020617;
+  border: none;
+  padding: 8px 14px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  margin-bottom: 10px;
+  border-radius: 6px;
+}
+button:hover { background-color: #7df9ff; }
+</style>
+</head>
+
+<body>
+<div class="game-wrapper">
+  <div class="nav"><a href="scratch.html">← Back to Hobby Page</a></div>
+  <div class="header"><h1>TRON LIGHT BIKES</h1></div>
+  <button id="startBtn">START GAME</button>
+  <div class="score">Time Taken: <span id="score">0</span> s</div>
+  <canvas id="game" width="360" height="360"></canvas>
+  <div class="controls">Arrow keys to turn · Avoid all light trails · Space to restart</div>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const startBtn = document.getElementById("startBtn");
+
+const grid = 6;
+const baseTrailLimit = 20;
+const maxTrailLimit = 40;
+const baseSpeed = 60;
+
+let tiles, player, enemy, trails, gameOver, timer, gameStarted, playerWon, lastTime;
+let currentSpeed, dynamicTrailLimit, enemyTurnCooldown;
+
+// --- Game Reset ---
+function resetGame() {
+  tiles = Math.floor(canvas.width / grid);
+  player = { x: 5, y: 5, dx: 1, dy: 0, color: "#00f6ff" };
+  enemy = { x: tiles - 6, y: tiles - 6, dx: -1, dy: 0, color: "#ff4ecd" };
+  trails = [];
+  gameOver = false;
+  timer = 0;
+  lastTime = 0;
+  playerWon = false;
+  gameStarted = true;
+  currentSpeed = baseSpeed;
+  dynamicTrailLimit = baseTrailLimit;
+  enemyTurnCooldown = 0;
+  scoreEl.textContent = 0;
+}
+
+// --- Start Game ---
+function startGame() {
+  resetGame();
+  startBtn.style.display = "none";
+  requestAnimationFrame(loop);
+}
+
+// --- Main Loop ---
+function loop(timestamp) {
+  if (!gameStarted) return;
+  if (!lastTime) lastTime = timestamp;
+
+  if (timestamp - lastTime > currentSpeed && !gameOver) {
+    update();
+    draw();
+    lastTime = timestamp;
+  }
+
+  if (gameOver) drawGameOver();
+  requestAnimationFrame(loop);
+}
+
+// --- Update Game State ---
+function update() {
+  timer++;
+  scoreEl.textContent = Math.floor(timer / 10);
+
+  if (timer % 50 === 0) {
+    if (currentSpeed > 20) currentSpeed -= 2;
+    if (dynamicTrailLimit < maxTrailLimit) dynamicTrailLimit++;
+  }
+
+  moveBike(player);
+  moveBike(enemy);
+
+  if (enemyTurnCooldown > 0) enemyTurnCooldown--;
+  else { smartEnemyTurn(); enemyTurnCooldown = 3; }
+
+  if (hitWall(player) || trails.some(t => t.x === player.x && t.y === player.y)) {
+    gameOver = true; playerWon = false;
+  }
+  if (hitWall(enemy) || trails.some(t => t.x === enemy.x && t.y === enemy.y)) {
+    gameOver = true; playerWon = true;
+  }
+}
+
+// --- Move Bike ---
+function moveBike(bike) {
+  trails.push({ x: bike.x, y: bike.y, color: bike.color });
+  let bikeTrails = trails.filter(t => t.color === bike.color);
+  const trailLimit = Math.floor(dynamicTrailLimit * 1.5);
+  if (bikeTrails.length > trailLimit) {
+    trails = trails.filter(t => t.color !== bike.color).concat(bikeTrails.slice(-trailLimit));
+  }
+  bike.x += bike.dx;
+  bike.y += bike.dy;
+}
+
+// --- Collision Detection ---
+function hitWall(bike) {
+  return bike.x < 0 || bike.y < 0 || bike.x >= tiles || bike.y >= tiles;
+}
+
+// --- Smart Enemy AI ---
+function isSafe(x, y) {
+  if (x < 0 || y < 0 || x >= tiles || y >= tiles) return false;
+  if (trails.some(t => t.x === x && t.y === y)) return false;
+  return true;
+}
+
+// Count safe moves from a position
+function countSafeMoves(x, y) {
+  const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+  return dirs.reduce((acc,d) => acc + (isSafe(x+d.dx, y+d.dy)?1:0),0);
+}
+
+// Recursive lookahead to evaluate safety multiple steps ahead
+function lookAheadSafety(x, y, dx, dy, depth=5) {
+  let safety = 0;
+  let nx = x, ny = y;
+  for (let i=0;i<depth;i++) {
+    nx += dx; ny += dy;
+    if (!isSafe(nx, ny)) break;
+    safety += countSafeMoves(nx, ny);
+  }
+  return safety;
+}
+
+// Enemy chooses safest path
+function smartEnemyTurn() {
+  const dirs = [{dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}];
+  const safeDirs = dirs.filter(d=>isSafe(enemy.x+d.dx, enemy.y+d.dy));
+  if(safeDirs.length===0) return;
+
+  let bestDirs=[], maxScore=-1;
+  safeDirs.forEach(d=>{
+    const score = countSafeMoves(enemy.x+d.dx, enemy.y+d.dy) + lookAheadSafety(enemy.x, enemy.y, d.dx, d.dy, 5);
+    if(score>maxScore){ maxScore=score; bestDirs=[d]; }
+    else if(score===maxScore) bestDirs.push(d);
+  });
+
+  const forward = bestDirs.find(d=>d.dx===enemy.dx && d.dy===enemy.dy);
+  if(forward && Math.random()<0.8){ enemy.dx=forward.dx; enemy.dy=forward.dy; return; }
+
+  const choice = bestDirs[Math.floor(Math.random()*bestDirs.length)];
+  enemy.dx=choice.dx; enemy.dy=choice.dy;
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  trails.forEach(t=>{
+    ctx.fillStyle=t.color;
+    ctx.shadowBlur=10; ctx.shadowColor=t.color;
+    ctx.fillRect(t.x*grid, t.y*grid, grid, grid);
+  });
+
+  drawBike(player);
+  drawBike(enemy);
+  ctx.shadowBlur=0;
+}
+
+function drawBike(bike) {
+  ctx.fillStyle=bike.color;
+  ctx.shadowBlur=15; ctx.shadowColor=bike.color;
+  ctx.fillRect(bike.x*grid, bike.y*grid, grid, grid);
+}
+
+function drawGameOver() {
+  ctx.fillStyle="rgba(0,0,0,0.75)";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.fillStyle=playerWon?"#00f6ff":"#ff4ecd";
+  ctx.textAlign="center";
+  ctx.font="18px 'Press Start 2P'";
+  ctx.fillText(playerWon?"USER WINS!":"PROGRAM WINS", canvas.width/2, canvas.height/2-10);
+
+  ctx.fillStyle="#ffffff";
+  ctx.font="10px 'Press Start 2P'";
+  ctx.fillText("Press SPACE to restart", canvas.width/2, canvas.height/2+20);
+
+  startBtn.style.display="inline-block";
+}
+
+// --- Controls ---
+document.addEventListener("keydown", e=>{
+  if(!gameStarted) return;
+  if(gameOver && e.code==="Space") startGame();
+
+  if(e.key==="ArrowUp" && player.dy===0){ player.dx=0; player.dy=-1; }
+  if(e.key==="ArrowDown" && player.dy===0){ player.dx=0; player.dy=1; }
+  if(e.key==="ArrowLeft" && player.dx===0){ player.dx=-1; player.dy=0; }
+  if(e.key==="ArrowRight" && player.dx===0){ player.dx=1; player.dy=0; }
+});
+
+startBtn.addEventListener("click", startGame);
+</script>
+</body>
+</html>
